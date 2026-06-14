@@ -1,49 +1,79 @@
 @echo off
-title SLVGP Hassan Website - Sync Updates to GitHub
+title SLVGP Hassan Website - Secure Sync Update
 echo ================================================================
-echo   SLVGP HASSAN SYNC UPDATE ASSISTANT
+echo   SLVGP HASSAN SECURE SYNC UPDATE ASSISTANT
 echo ================================================================
 echo.
-echo This script will save and push all your latest edits to GitHub.
+echo This script safely stages, verifies, and pushes only the
+echo known website files to GitHub. No wildcards. No force push.
 echo.
 
-:: Check if git is installed
-where git >nul 2>nul
-if %errorlevel% neq 0 (
-    echo [ERROR] Git is not installed or not in your PATH.
-    echo Please install Git from https://git-scm.com/ and try again.
+:: ----------------------------------------------------------------
+:: SECURITY: Verify Git is installed from a known location.
+:: We do NOT use "where git" because PATH can be manipulated.
+:: ----------------------------------------------------------------
+set GIT_EXE="C:\Program Files\Git\cmd\git.exe"
+if not exist %GIT_EXE% set GIT_EXE="C:\Program Files\Git\bin\git.exe"
+if not exist %GIT_EXE% set GIT_EXE="C:\Program Files (x86)\Git\bin\git.exe"
+
+if not exist %GIT_EXE% (
+    echo [ERROR] Git not found at known locations.
+    echo Install Git from https://git-scm.com/ and try again.
     echo.
     pause
-    exit /b
+    exit /b 1
 )
 
-:: Check if git is initialized
+echo [OK] Git found at: %GIT_EXE%
+echo.
+
+:: ----------------------------------------------------------------
+:: SECURITY: Check Git is initialized.
+:: ----------------------------------------------------------------
 if not exist ".git" (
     echo [ERROR] Git has not been initialized in this folder.
     echo Please run deploy.bat first to configure your repository.
     echo.
     pause
-    exit /b
+    exit /b 1
 )
 
-:: Stage files
-echo Staging updated files...
-git add index.html slvgp-hassan-website.html slvgp-hassan-editor.html server.py logo-removebg-preview.png update.bat deploy.bat
+:: ----------------------------------------------------------------
+:: SECURITY: Only stage specific known files — NO wildcards.
+:: This prevents any injected or unknown files from being pushed.
+:: ----------------------------------------------------------------
+echo Staging only verified website files...
+%GIT_EXE% add index.html
+%GIT_EXE% add slvgp-hassan-website.html
+%GIT_EXE% add slvgp-hassan-editor.html
+%GIT_EXE% add server.py
+%GIT_EXE% add logo-removebg-preview.png
+%GIT_EXE% add update.bat
+%GIT_EXE% add deploy.bat
+
 if %errorlevel% neq 0 (
-    echo [ERROR] Failed to stage files.
+    echo [ERROR] Staging failed. Check your file permissions.
     pause
-    exit /b
+    exit /b 1
 )
 
-:: Commit
+:: ----------------------------------------------------------------
+:: SECURITY: Commit with unique timestamp so every push is
+:: individually traceable in the audit history. No generic labels.
+:: ----------------------------------------------------------------
+set TIMESTAMP=%date% %time%
 echo.
-echo Committing changes...
-git commit -m "Update website content via sync script"
+echo Committing with timestamp: %TIMESTAMP%
+%GIT_EXE% commit -m "Secure sync update: %TIMESTAMP%"
 
-:: Push to GitHub
+:: ----------------------------------------------------------------
+:: SECURITY: Push WITHOUT --force. This prevents accidental or
+:: malicious history rewrites. If there is a conflict, the push
+:: will fail and alert you rather than silently destroying history.
+:: ----------------------------------------------------------------
 echo.
-echo Pushing updates to GitHub Pages...
-git push origin main
+echo Pushing to GitHub (no force — history is protected)...
+%GIT_EXE% push origin main
 
 if %errorlevel% equ 0 (
     echo.
@@ -51,13 +81,16 @@ if %errorlevel% equ 0 (
     echo   SUCCESSFULLY UPDATED LIVE WEBSITE!
     echo ================================================================
     echo.
-    echo   Your changes are pushed to GitHub.
-    echo   The live site will update in a minute at your GitHub Pages URL!
+    echo   Your changes are live on GitHub Pages.
+    echo   The website will update within 1-2 minutes.
     echo.
 ) else (
     echo.
-    echo [ERROR] Sync failed.
-    echo Please make sure your network is connected and git is configured.
+    echo [ERROR] Push failed.
+    echo   - Check your internet connection.
+    echo   - Ensure your GitHub credentials are configured.
+    echo   - If remote has newer commits, run: git pull origin main
+    echo     then try this script again.
     echo.
 )
 
