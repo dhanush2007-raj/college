@@ -3353,7 +3353,8 @@ document.getElementById('year').textContent = new Date().getFullYear();
         fetch('/save', {
           method: 'POST',
           headers: {
-            'Content-Type': 'text/html'
+            'Content-Type': 'text/html',
+            'X-Auth-Token': 'SLVGP-HASSAN-2024-SECURE-9X7K2M'
           },
           body: exportedHTML
         })
