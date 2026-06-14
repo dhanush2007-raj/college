@@ -3248,10 +3248,7 @@ document.getElementById('year').textContent = new Date().getFullYear();
             } else if (data.git_status === 'local_only') {
               showToast("Saved locally successfully!");
             } else if (data.git_status && data.git_status.startsWith('error')) {
-              alert("Saved locally, but Git push to GitHub failed:
-" + data.git_status + "
-
-Make sure your network is connected and git credentials are set up.");
+              alert("Saved locally, but Git push to GitHub failed:\n" + data.git_status + "\n\nMake sure your network is connected and git credentials are set up.");
             } else {
               showToast("Saved locally successfully!");
             }
