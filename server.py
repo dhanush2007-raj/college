@@ -29,10 +29,34 @@ class EditorHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 with open(index_path, "w", encoding="utf-8") as f:
                     f.write(html_content)
                 
+                # Auto git commit and push if git is initialized
+                git_status = "local_only"
+                if os.path.exists(os.path.join(DIRECTORY, ".git")):
+                    import subprocess
+                    try:
+                        # Stage files (including logo and scripts)
+                        subprocess.run(["git", "add", "index.html", "slvgp-hassan-website.html", "slvgp-hassan-editor.html", "server.py", "logo-removebg-preview.png"], cwd=DIRECTORY, check=True)
+                        # Commit
+                        subprocess.run(["git", "commit", "-m", "Auto-update via CMS Editor"], cwd=DIRECTORY, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        # Push to GitHub
+                        res = subprocess.run(["git", "push", "origin", "main"], cwd=DIRECTORY, capture_output=True, text=True)
+                        if res.returncode == 0:
+                            git_status = "pushed"
+                        else:
+                            git_status = f"error: {res.stderr.strip()}"
+                    except Exception as ge:
+                        git_status = f"exception: {str(ge)}"
+
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({"status": "success", "message": "Saved successfully!"}).encode())
+                
+                response_data = {
+                    "status": "success", 
+                    "message": "Saved locally successfully!", 
+                    "git_status": git_status
+                }
+                self.wfile.write(json.dumps(response_data).encode())
             except Exception as e:
                 self.send_response(500)
                 self.send_header('Content-type', 'application/json')
