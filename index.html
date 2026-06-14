@@ -26,7 +26,15 @@
   --ease:cubic-bezier(.4,0,.2,1);
 }
 
-*{margin:0;padding:0;box-sizing:border-box;}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color: transparent;}
+button, a, .btn, .g-tile, .carousel-arrow, .carousel-dot {
+  touch-action: manipulation;
+}
+.pc-1, .pc-2, .pc-3, .lead-avatar, .news-thumb, .member-avatar, .g-tile {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
 html{scroll-behavior:smooth;}
 body{
   font-family:'Inter',sans-serif;
@@ -1009,8 +1017,10 @@ footer{
   <div class="lightbox-content">
     <div class="lightbox-carousel">
       <button class="carousel-arrow prev" id="carouselPrev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
-      <div class="carousel-slide-wrapper">
-        <img id="lightboxImg" src="" alt="Gallery Image">
+      <div class="carousel-slide-wrapper" style="position: relative;">
+        <img id="lightboxImg" src="" alt="Gallery Image" style="user-select: none; pointer-events: none; -webkit-user-drag: none; display: block;">
+        <div class="image-overlay-protection" style="position: absolute; inset: 0; z-index: 5; background: rgba(0,0,0,0);"></div>
+        <div class="watermark-overlay" style="position: absolute; inset: 0; z-index: 6; display: flex; align-items: center; justify-content: center; pointer-events: none; color: rgba(255,255,255,0.12); font-size: calc(1.5rem + 2vw); font-weight: 800; font-family: 'Inter', sans-serif; text-transform: uppercase; letter-spacing: 0.15em; transform: rotate(-25deg); user-select: none; -webkit-user-select: none; white-space: nowrap;">SLVGP ALUMNI</div>
       </div>
       <button class="carousel-arrow next" id="carouselNext"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
     </div>
@@ -1023,6 +1033,32 @@ footer{
 </div>
 
 <script>
+// Disable Right-Click context menu
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+// Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
+document.addEventListener('keydown', e => {
+  if (e.key === 'F12') {
+    e.preventDefault();
+    return false;
+  }
+  if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c')) {
+    e.preventDefault();
+    return false;
+  }
+  if (e.ctrlKey && (e.key === 'U' || e.key === 'u')) {
+    e.preventDefault();
+    return false;
+  }
+});
+
+// Disable dragging on all images
+document.addEventListener('dragstart', e => {
+  if (e.target.tagName === 'IMG') {
+    e.preventDefault();
+  }
+});
+
 const navbar = document.getElementById('navbar');
 window.addEventListener('scroll', () => {
   navbar.classList.toggle('scrolled', window.scrollY > 40);
