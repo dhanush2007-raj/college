@@ -456,7 +456,11 @@ button{font-family:inherit;}
 .lightbox-close svg{width:18px;height:18px;}
 
 .members{background:var(--cream);}
-.members-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:24px;}
+.members-grid{
+  display:grid;grid-template-columns:repeat(5,1fr);gap:24px;
+  min-height:220px;                   /* prevents collapse while loading */
+  transition:opacity .25s ease;       /* smooth silent swap */
+}
 .member-card{
   background:#fff;border-radius:var(--radius-lg);padding:26px 18px;text-align:center;
   border:1px solid var(--line);box-shadow:var(--shadow-soft);position:relative;
@@ -1205,10 +1209,10 @@ function toDriveDirectURL(rawURL) {
 // Handles quoted fields containing commas correctly.
 // ----------------------------------------------------------------
 function parseCSV(text) {
-  const lines = text.trim().split('\n');
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-  return lines.slice(1).map(line => {
+
+  const parseCSVLine = (line) => {
     const cols = [];
     let cur = '', inQ = false;
     for (let i = 0; i < line.length; i++) {
@@ -1218,6 +1222,12 @@ function parseCSV(text) {
       else { cur += ch; }
     }
     cols.push(cur.trim());
+    return cols;
+  };
+
+  const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, ''));
+  return lines.slice(1).map(line => {
+    const cols = parseCSVLine(line);
     const obj = {};
     headers.forEach((h, i) => { obj[h] = (cols[i] || '').replace(/^"|"$/g, ''); });
     return obj;
@@ -1235,14 +1245,26 @@ function parseCSV(text) {
 //     to intercept any right-click / drag attempt at the DOM level.
 // ----------------------------------------------------------------
 function buildMemberCard(row, idx) {
-  // Column names taken directly from the real Google Sheet CSV headers
-  const name     = row['Full Name (as per academic records)'] || row['Full Name'] || row['Name'] || '';
-  const course   = row['Program/Course Graduated From (e.g., B.Tech Computer Science, MBA Finance, B.A. History)'] ||
-                   row['Program'] || row['Course'] || '';
-  const gradYr   = row['Year of Graduation'] || row['Year of Joining'] || row['Batch Year'] || row['Year'] || '';
-  const rawPhoto = row['Upload a Recent Passport Size Photograph (for ID purposes)'] ||
-                   row['Photo (Google Drive share link)'] || row['Photo'] || row['Image'] || '';
+  // ── Column names taken directly from the live Google Sheet CSV headers ──
+  const name     = row['Full Name (as per academic records)']
+                || row['Full Name'] || row['Name'] || '';
 
+  const course   = row['Program/Course Graduated From (e.g., B.Tech Computer Science, MBA Finance, B.A. History)']
+                || row['Program'] || row['Course'] || '';
+
+  // "Year of Graduation" in the form = the year the student STARTED
+  // (3-year Diploma course → end year = start + 3)
+  const startYr  = parseInt(
+                    row['Year of Graduation']
+                 || row['Year of Joining']
+                 || row['Batch Year']
+                 || row['Year'] || '0'
+                  , 10);
+  const endYr    = startYr ? startYr + 3 : 0;
+
+  const rawPhoto = row['Upload a Recent Passport Size Photograph (for ID purposes)']
+                || row['Photo (Google Drive share link)']
+                || row['Photo'] || row['Image'] || '';
 
   const initials   = name.split(' ').map(w => w[0] || '').join('').toUpperCase().slice(0, 2);
   const photoSrc   = toDriveDirectURL(rawPhoto);
@@ -1262,32 +1284,61 @@ function buildMemberCard(row, idx) {
        <div class="member-avatar-shield" oncontextmenu="return false;" ondragstart="return false;"></div>`
     : initials;
 
+  const batchLabel = startYr ? `Batch ${startYr}-${endYr}` : '';
+
   return `<div class="member-card reveal in-view" style="--i:${idx % 10};">
     <span class="member-badge">New</span>
     <div class="member-avatar">${avatarContent}</div>
     <h4>${name}</h4>
-    ${course   ? `<span class="dept">${course}</span>`   : ''}
-    ${gradYr ? `<span class="batch">Batch ${parseInt(gradYr, 10) - 2}–${gradYr}</span>` : ''}
+    ${course     ? `<span class="dept">${course}</span>`   : ''}
+    ${batchLabel ? `<span class="batch">${batchLabel}</span>` : ''}
   </div>`;
 }
 
-// ----------------------------------------------------------------
-// Fetch the CSV with a 5-second timeout for speed resilience.
-// Falls back to placeholder cards if fetch fails or times out.
-// Uses no-store cache to always get fresh data.
-// ----------------------------------------------------------------
-async function loadLiveMembers() {
-  const grid = document.getElementById('membersGrid');
-  if (!grid || SHEET_CSV_URL === 'YOUR_PUBLISHED_GOOGLE_SHEET_CSV_URL_HERE') return;
+// ─────────────────────────────────────────────────────────────────────────────
+// LIVE MEMBERS FEED
+// • Fetches every 2 s — silently, in the background
+// • 3 s abort timeout for speed
+// • Fingerprint diff: DOM only repaints when data actually changed
+//   → zero visual flicker / jank on repeat polls
+// • Uses requestIdleCallback so the browser picks a quiet moment
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // 5-second timeout abort controller
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+// Capture the default static grid once at startup (restored if sheet is empty)
+const _defaultMembersHTML = (() => {
+  const g = document.getElementById('membersGrid');
+  return g ? g.innerHTML : '';
+})();
+
+let _lastMembersFingerprint = '';
+let _membersFirstLoad = true;
+let _membersFetchBusy  = false;
+
+async function loadLiveMembers() {
+  // Guard: never run two fetches at the same time
+  if (_membersFetchBusy) return;
+  _membersFetchBusy = true;
+
+  const grid = document.getElementById('membersGrid');
+  if (!grid || SHEET_CSV_URL === 'YOUR_PUBLISHED_GOOGLE_SHEET_CSV_URL_HERE') {
+    _membersFetchBusy = false;
+    return;
+  }
+
+  // First load: dim slightly so user doesn't see a jarring swap
+  if (_membersFirstLoad) {
+    grid.style.opacity = '0.5';
+    grid.style.pointerEvents = 'none';
+  }
+
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3000); // 3 s timeout (fast)
 
   try {
-    const res  = await fetch(SHEET_CSV_URL, {
-      signal: controller.signal,
-      cache: 'no-store'   // Always fetch fresh — no stale caches
+    const res = await fetch(SHEET_CSV_URL, {
+      signal: ctrl.signal,
+      cache:  'no-store',            // always fresh — bypass every cache layer
+      headers: { 'Accept': 'text/csv,text/plain,*/*' }
     });
     clearTimeout(timer);
 
@@ -1295,38 +1346,78 @@ async function loadLiveMembers() {
     const text = await res.text();
     const rows = parseCSV(text);
 
-    if (!rows.length) return; // No submissions yet — keep placeholders
+    // ── Diagnostic log (visible in browser DevTools → Console) ────────────
+    // Shows exact column headers and first row values so any
+    // field-mapping issue is immediately obvious.
+    if (_membersFirstLoad && rows.length) {
+      console.group('%c[SLVGP Members Feed] Live data received', 'color:#b8860b;font-weight:bold');
+      console.log('Row count :', rows.length);
+      console.log('Columns   :', Object.keys(rows[0]));
+      console.log('First row :', rows[0]);
+      console.groupEnd();
+    }
 
-    // Inject live cards: newest 10, newest first
-    grid.innerHTML = rows
-      .slice(-10)
-      .reverse()
-      .map(buildMemberCard)
-      .join('');
+    // Build new HTML string
+    const newHTML = rows.length
+      ? rows.slice(-10).reverse().map((r, i) => buildMemberCard(r, i)).join('')
+      : _defaultMembersHTML;
 
-    // Ensure reveal animation fires on injected cards
-    grid.querySelectorAll('.member-card').forEach(el => el.classList.add('in-view'));
+    // ── Fingerprint diff ───────────────────────────────────────────
+    // Only repaint if data has actually changed → zero visible flicker
+    const fp = newHTML.length + '|' + newHTML.slice(0, 120);
+    if (fp !== _lastMembersFingerprint) {
+      _lastMembersFingerprint = fp;
+      grid.innerHTML = newHTML;
 
-    // Block drag on every rendered avatar image at runtime
-    grid.querySelectorAll('.member-avatar-img').forEach(img => {
-      img.addEventListener('dragstart',    e => e.preventDefault(), { passive: false });
-      img.addEventListener('contextmenu',  e => e.preventDefault(), { passive: false });
-      img.addEventListener('mousedown',    e => { if (e.button === 2) e.preventDefault(); }, { passive: false });
-    });
+      // Re-attach security guards on freshly-injected images
+      grid.querySelectorAll('.member-avatar-img').forEach(img => {
+        img.addEventListener('dragstart',   e => e.preventDefault(), { passive: false });
+        img.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
+        img.addEventListener('mousedown',   e => { if (e.button === 2) e.preventDefault(); }, { passive: false });
+      });
+
+      // Make sure reveal animation fires
+      grid.querySelectorAll('.member-card').forEach(el => el.classList.add('in-view'));
+    }
+
+    // Restore opacity after first successful load
+    if (_membersFirstLoad) {
+      grid.style.opacity = '';
+      grid.style.pointerEvents = '';
+      _membersFirstLoad = false;
+    }
 
   } catch (err) {
     clearTimeout(timer);
-    if (err.name === 'AbortError') {
-      console.warn('Members feed timed out — showing placeholder cards.');
-    } else {
-      console.warn('Members feed unavailable — showing placeholder cards.', err);
+
+    // On first-load failure only: restore default grid & opacity
+    if (_membersFirstLoad) {
+      grid.innerHTML = _defaultMembersHTML;
+      grid.style.opacity = '';
+      grid.style.pointerEvents = '';
+      _membersFirstLoad = false;
     }
+    // Silent on subsequent polls — keep whatever is displayed
+  } finally {
+    _membersFetchBusy = false;
   }
 }
 
-// First load immediately, then refresh every 5 seconds for live updates
+// ── Scheduler ──────────────────────────────────────────────────────────────
+// Wraps each poll in requestIdleCallback so the browser runs it during
+// idle time — never blocking animations, scrolls, or user interactions.
+const _rIC = window.requestIdleCallback || (cb => setTimeout(cb, 1));
+
+function scheduleMembersPoll() {
+  _rIC(() => {
+    loadLiveMembers();           // fire the fetch during an idle moment
+  }, { timeout: 1800 });         // but no later than 1.8 s (well within the 2 s interval)
+}
+
+// First load: immediately (highest priority)
 loadLiveMembers();
-setInterval(loadLiveMembers, 5000);
+// Then poll silently every 2 seconds
+setInterval(scheduleMembersPoll, 2000);
 
 const copyrightsOverlay = document.getElementById('copyrightsOverlay');
 const openCopyrights = document.getElementById('openCopyrights');
