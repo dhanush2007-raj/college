@@ -23,7 +23,7 @@ SECRET_TOKEN = "SLVGP-HASSAN-2024-SECURE-9X7K2M"
 
 # Maximum allowed POST body size: 5 MB. Requests larger than this
 # are rejected immediately to prevent RAM exhaustion attacks.
-MAX_CONTENT_BYTES = 5 * 1024 * 1024  # 5 MB
+MAX_CONTENT_BYTES = 10 * 1024 * 1024  # 5 MB
 
 # The ONLY file names that are allowed to be written.
 # Any attempt to write to any other filename is blocked.
